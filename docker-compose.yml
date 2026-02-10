@@ -1,0 +1,71 @@
+version: '3.8'
+
+# ================================================================
+# DOCKER COMPOSE
+
+#        docker-compose up -d
+#
+
+
+services:
+
+  # ---------------------------------------------------
+  # SERVICE 1: PostgreSQL Database
+
+  # ---------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: fleet-postgres
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB:       ev_h
+    ports:
+      - "5432:5432"   # Local port 5432 -> Container port 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Data persist karo
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql  # Auto schema init
+    command:
+      # Performance tuning
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------
+  # SERVICE 2: NestJS Application
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fleet-app
+    ports:
+      - "3000:3000"   # API port
+    environment:
+      NODE_ENV:      production
+      DB_HOST:       localhost
+      DB_PORT:       5432
+      DB_USERNAME:   postgres
+      DB_PASSWORD:   root
+      DB_DATABASE:   ev_h
+      DB_LOGGING:    "false"
+    depends_on:
+      postgres:
+        condition: service_healthy   # Wait for DB to be ready
+    restart: unless-stopped
+
+volumes:
+  postgres_data:   # Named volume - data survives restarts
